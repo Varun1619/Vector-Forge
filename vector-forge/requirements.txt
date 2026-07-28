@@ -1,3 +1,8 @@
 requests==2.32.3
 feedparser==6.0.11
 boto3==1.35.36
+
+# Phase 2
+pandas==2.2.3
+pandera==0.20.4
+sqlalchemy==1.4.54
