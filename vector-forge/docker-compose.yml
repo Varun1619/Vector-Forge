@@ -10,6 +10,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    PYTHONPATH: /opt/airflow/include
     VF_WAREHOUSE_HOST: warehouse
     VF_WAREHOUSE_PORT: "5432"
     VF_WAREHOUSE_DB: vectorforge
