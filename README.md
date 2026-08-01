@@ -4,9 +4,9 @@ Production-grade data pipeline that ingests arXiv papers, enforces data-quality
 gates, and embeds them into pgvector for retrieval-augmented generation (RAG).
 Built with production rigor: quality gates, freshness checks, and observability.
 
-> **Status: Phase 3 complete** — the pipeline is AI-ready. Validated papers are
-> chunked, embedded locally, and loaded into pgvector; semantic similarity search
-> runs as a plain SQL query.
+> **Status: Phase 4 complete** — the pipeline is functionally complete:
+> ingest → validate → embed → serve → monitor, with a freshness SLA and a
+> queryable run-health history.
 
 ## Stack
 
@@ -35,12 +35,13 @@ arXiv API ──▶ Airflow ──▶ MinIO (raw, immutable)
                                   semantic search (pgvector <=>)
                                             │
                                             ▼
-                                  freshness + observability
+                     freshness SLA + curated.pipeline_runs
+                     (stale → run fails; metrics logged every run)
 ```
 
 Airflow's metadata database is kept separate from the analytical warehouse.
 Data is organized into `staging` (cleaned, validated) and `curated`
-(serving-ready: chunks + embeddings) schemas.
+(serving-ready: chunks, embeddings, run metrics) schemas.
 
 ## Quickstart
 
@@ -52,8 +53,8 @@ docker compose up -d --build
 - **Airflow UI** — http://localhost:8080 (admin / admin)
 - **MinIO console** — http://localhost:9001
 
-Run the DAGs in order: `platform_smoke_test` → `arxiv_ingest` → `arxiv_stage`
-→ `arxiv_embed`.
+Run the DAGs in order: `arxiv_ingest` → `arxiv_stage` → `arxiv_embed`
+→ `arxiv_freshness`.
 
 ## Pipeline
 
@@ -63,11 +64,13 @@ Run the DAGs in order: `platform_smoke_test` → `arxiv_ingest` → `arxiv_stage
    pandera schema and upserts clean rows into `staging.arxiv_papers`. Validation
    failures **fail the run**; load is an idempotent `ON CONFLICT` upsert inside a
    transaction.
-3. **Chunk + embed** (`arxiv_embed`) — chunks abstracts (word-boundary windows
-   with overlap), embeds them locally with all-MiniLM-L6-v2 (384-dim), and loads
-   vectors into `curated.chunks` with an IVFFlat cosine index. **Incremental**:
-   an anti-join processes only papers not yet embedded, so daily runs do minimal
-   work.
+3. **Chunk + embed** (`arxiv_embed`) — chunks abstracts, embeds them locally with
+   all-MiniLM-L6-v2 (384-dim), and loads vectors into `curated.chunks` with an
+   IVFFlat cosine index. **Incremental**: only unembedded papers are processed.
+4. **Freshness + observability** (`arxiv_freshness`) — enforces a freshness SLA
+   (**fails the run** if the newest paper is older than 3 days) and records
+   counts, staleness, and status to `curated.pipeline_runs` on every run — pass
+   or fail.
 
 ## Retrieval
 
@@ -81,23 +84,27 @@ ORDER BY embedding <=> :query_vector
 LIMIT 5;
 ```
 
-Given a seed chunk, the store returns topically-related papers (compositional
-generalization, long-horizon planning, pretraining) — meaning-based matching,
-not keyword matching.
+## Data quality & trust
 
-## Data quality
+The pipeline is built to **fail loudly** rather than corrupt or mislead:
 
-Every record passes an explicit schema before entering the warehouse. The
-pipeline **fails loudly on bad data** rather than corrupting downstream tables.
-Breaking a record (e.g. blanking an abstract) turns the run red with a precise
-pandera report naming the offending column and rule.
+- **Bad data** — records failing the pandera schema fail the run and never enter
+  the warehouse.
+- **Stale data** — a run can succeed at moving data yet still serve stale content
+  if the source stops updating. The freshness check treats "data exists" and
+  "data is fresh" as separate questions and fails when the newest record breaches
+  the SLA.
+- **Health history** — `curated.pipeline_runs` records every run's row counts,
+  data age, and status, so pipeline health is queryable rather than buried in
+  logs.
 
 ## Design principles
 
-- **Fail fast** on bad or missing data rather than corrupt downstream tables.
+- **Fail fast** on bad or stale data rather than corrupt/mislead downstream.
 - **Immutable raw** — the warehouse can always be rebuilt from source.
 - **Idempotent** at every stage — safe to re-run.
 - **Incremental** — never redoes work already done.
+- **Observable** — run health is recorded and queryable.
 - **Reproducible** — the whole platform stands up from one command.
 
 ## Project layout
@@ -113,7 +120,8 @@ vector-forge/
 │   ├── platform_smoke_test.py
 │   ├── arxiv_ingest.py
 │   ├── arxiv_stage.py
-│   └── arxiv_embed.py
+│   ├── arxiv_embed.py
+│   └── arxiv_freshness.py
 └── include/vectorforge/
     ├── __init__.py
     ├── storage.py            # shared S3/MinIO client
@@ -123,33 +131,36 @@ vector-forge/
 
 ## Troubleshooting notes
 
-Real issues encountered while building this platform, and the fixes — kept here
-because the fixes are non-obvious and worth documenting.
+Real issues encountered while building this platform, and the fixes.
 
 ### Airflow can't write logs — `PermissionError: /opt/airflow/logs`
 
-Host-mounted log folder is owned by the host user; Airflow's container user (UID
-50000) is locked out. **Fix:** add `AIRFLOW_UID=50000` to `.env` and
-`user: "${AIRFLOW_UID:-50000}:0"` to the shared Airflow config.
+Host-mounted log folder locks out Airflow's container user (UID 50000).
+**Fix:** `AIRFLOW_UID=50000` in `.env` and `user: "${AIRFLOW_UID:-50000}:0"`.
 
 ### MinIO bucket fails to create — `Access Denied`
 
-`$${VAR}` in the init command expanded to empty inside the container, and the
-image's `MINIO_ROOT_USER_FILE` / `MINIO_ROOT_PASSWORD_FILE` defaults overrode the
-plain credentials. **Fix:** single-`$` substitution in the init command and set
-the `_FILE` variables to empty in the `minio` service.
+`$${VAR}` expanded to empty in the init container, and image `_FILE` defaults
+overrode the plain credentials. **Fix:** single-`$` substitution and set
+`MINIO_ROOT_USER_FILE`/`MINIO_ROOT_PASSWORD_FILE` to empty.
 
 ### DAG doesn't appear — `ModuleNotFoundError: No module named 'vectorforge'`
 
-The `include/` folder was mounted but not on Python's import path. **Fix:** set
-`PYTHONPATH: /opt/airflow/include`. Diagnose with `airflow dags list-import-errors`.
+`include/` was mounted but not on the import path. **Fix:** set
+`PYTHONPATH: /opt/airflow/include`; diagnose with `airflow dags list-import-errors`.
 
 ### Scheduler crashes after adding pandera — SQLAlchemy `Mapped[]` ArgumentError
 
-`pandera` transitively upgraded SQLAlchemy to 2.0.x, incompatible with Airflow
-2.10's ORM — the scheduler crashed on startup. **Fix:** pin `sqlalchemy==1.4.54`
-so pandera can't upgrade it. General rule: don't override versions Airflow
-manages, and verify edits actually saved before rebuilding with `--no-cache`.
+`pandera` transitively upgraded SQLAlchemy to 2.0.x, breaking Airflow 2.10's ORM.
+**Fix:** pin `sqlalchemy==1.4.54` so pandera can't upgrade it. Don't override
+versions Airflow manages; verify edits saved before `docker compose build --no-cache`.
+
+### DAG runs an old version of itself — stale `__pycache__`
+
+After a DAG file was deleted and re-added, Airflow executed a cached `.pyc` from
+`dags/__pycache__/`, reproducing an old failure from a since-fixed version.
+**Fix:** clear the cache (`rm -rf /opt/airflow/dags/__pycache__`) and
+`airflow dags reserialize` when a DAG behaves like an outdated version of itself.
 
 ## Status
 
@@ -157,7 +168,7 @@ manages, and verify edits actually saved before rebuilding with `--no-cache`.
 - [x] **Phase 1** — Ingestion DAG lands raw arXiv data in MinIO.
 - [x] **Phase 2** — Quality gates + validated staging load.
 - [x] **Phase 3** — Chunking, local embeddings, and vector search.
-- [ ] Phase 4 — Freshness SLA + run-level observability.
+- [x] **Phase 4** — Freshness SLA + run-level observability.
 - [ ] Phase 5 — Tests, CI, and documentation.
 
 ## License
