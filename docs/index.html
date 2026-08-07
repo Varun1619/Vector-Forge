@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VectorForge — Live Semantic Search over arXiv AI Papers</title>
+<meta name="description" content="Semantic search over live arXiv cs.AI papers, running entirely in your browser — no backend, no database, powered by GitHub Actions and GitHub Pages.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧭</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./assets/style.css">
+</head>
+<body>
+
+<div class="bg-glow" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="#top">
+      <span class="brand-mark">◆</span> VectorForge
+    </a>
+    <nav class="topnav">
+      <a href="#how-it-works">How it works</a>
+      <a href="https://github.com/Varun1619/Vector-Forge" target="_blank" rel="noopener" class="gh-link">
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38l-.01-1.49c-2.22.48-2.69-.94-2.69-.94-.36-.92-.89-1.16-.89-1.16-.72-.5.06-.49.06-.49.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.7 7.7 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48l-.01 2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        Source
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero wrap">
+    <p class="eyebrow">Live demo · no server, no database</p>
+    <h1>Semantic search over fresh arXiv <span class="accent">cs.AI</span> papers —
+      entirely in your browser.</h1>
+    <p class="lede">
+      A scheduled GitHub Action embeds new papers with
+      <code>all-MiniLM-L6-v2</code> and commits a static index. When you search,
+      your query is embedded <em>on your own device</em> and ranked by cosine
+      similarity against every paper — the same retrieval step that powers the
+      full VectorForge RAG pipeline, running here with zero infrastructure.
+    </p>
+
+    <form id="search-form" class="search-form" autocomplete="off">
+      <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+        <path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <input id="search-input" type="text" placeholder="Try “retrieval-augmented generation” or “diffusion models for robotics”…" aria-label="Search arXiv papers">
+      <button type="submit">Search</button>
+    </form>
+
+    <div class="chips" role="group" aria-label="Example queries">
+      <button type="button" class="chip">reinforcement learning from human feedback</button>
+      <button type="button" class="chip">efficient transformer attention</button>
+      <button type="button" class="chip">multi-agent LLM planning</button>
+      <button type="button" class="chip">vector database indexing</button>
+    </div>
+
+    <p id="search-status" class="status" role="status" aria-live="polite">Loading search index…</p>
+    <p id="index-meta" class="index-meta"></p>
+  </section>
+
+  <section class="results-section wrap">
+    <div id="results" class="results" aria-live="polite"></div>
+  </section>
+
+  <section id="how-it-works" class="how wrap">
+    <h2>How this page works</h2>
+    <p class="how-sub">No API, no server, no database — just a static page and a browser doing real ML inference.</p>
+    <ol class="flow">
+      <li>
+        <span class="flow-num">1</span>
+        <h3>Fetch &amp; embed</h3>
+        <p>A scheduled GitHub Action pulls the newest cs.AI papers from the arXiv API and embeds each abstract with <code>sentence-transformers/all-MiniLM-L6-v2</code>.</p>
+      </li>
+      <li>
+        <span class="flow-num">2</span>
+        <h3>Commit &amp; publish</h3>
+        <p>The Action commits the refreshed vectors as a static JSON file. GitHub Pages republishes it automatically — no deploy step, no server to run.</p>
+      </li>
+      <li>
+        <span class="flow-num">3</span>
+        <h3>Embed in-browser</h3>
+        <p>When you search, <a href="https://github.com/xenova/transformers.js" target="_blank" rel="noopener">transformers.js</a> loads the same model (as ONNX) and embeds your query locally — your text never leaves the device.</p>
+      </li>
+      <li>
+        <span class="flow-num">4</span>
+        <h3>Rank &amp; render</h3>
+        <p>Cosine similarity between your query vector and every paper vector runs client-side in plain JavaScript, and the closest matches render instantly.</p>
+      </li>
+    </ol>
+    <div class="stack">
+      <span class="stack-item">Python</span>
+      <span class="stack-item">sentence-transformers</span>
+      <span class="stack-item">GitHub Actions</span>
+      <span class="stack-item">GitHub Pages</span>
+      <span class="stack-item">transformers.js</span>
+      <span class="stack-item">pgvector (full pipeline)</span>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer wrap">
+  <p>
+    Part of <a href="https://github.com/Varun1619/Vector-Forge" target="_blank" rel="noopener">VectorForge</a> —
+    a production-style arXiv → RAG data pipeline (Airflow, pgvector, MinIO, data-quality gates).
+    This page is the static, backend-free sibling of the full system.
+  </p>
+</footer>
+
+<script type="module" src="./assets/app.js"></script>
+</body>
+</html>
