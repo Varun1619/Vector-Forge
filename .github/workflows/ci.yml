@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  pipeline-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vector-forge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install pytest pandas pandera ruff
+      - name: Lint
+        run: ruff check dags include || true
+      - name: Test
+        env:
+          PYTHONPATH: include
+        run: pytest -q tests/
+
+  search-index-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install pytest requests feedparser
+      - name: Test
+        run: pytest -q tests/test_build_search_index.py

@@ -1,0 +1,58 @@
+name: Build search index
+
+# Keeps docs/data/papers.json fresh for the GitHub Pages demo. No Airflow,
+# no database, no secrets required -- it fetches arXiv, embeds abstracts,
+# and commits the refreshed static index straight back to the repo.
+# GitHub Pages (serving /docs on this branch) republishes automatically.
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # daily, offset from the hour so it doesn't queue behind everyone else's :00 jobs
+  workflow_dispatch: {} # lets you trigger a run on demand from the Actions tab
+  push:
+    branches: [main]
+    paths:
+      - scripts/build_search_index.py
+      - .github/workflows/build-search-index.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-search-index
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test deps and run offline tests
+        run: |
+          pip install pytest requests feedparser
+          pytest -q tests/test_build_search_index.py
+
+      - name: Install embedding deps
+        run: pip install sentence-transformers
+
+      - name: Build index
+        run: python scripts/build_search_index.py
+
+      - name: Commit refreshed index
+        run: |
+          git config user.name "vectorforge-bot"
+          git config user.email "actions@github.com"
+          git add docs/data/papers.json
+          if git diff --cached --quiet; then
+            echo "No changes to the index -- nothing to commit"
+            exit 0
+          fi
+          git commit -m "chore: refresh search index [skip ci]"
+          git push origin HEAD:main

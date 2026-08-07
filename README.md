@@ -8,6 +8,20 @@ Built with production rigor: quality gates, freshness checks, and observability.
 > ingest → validate → embed → serve → monitor, with a freshness SLA and a
 > queryable run-health history.
 
+## Live demo
+
+**[varun1619.github.io/Vector-Forge](https://varun1619.github.io/Vector-Forge/)**
+— semantic search over live arXiv `cs.AI` papers, running with zero backend.
+
+A scheduled GitHub Action re-embeds the newest papers with `all-MiniLM-L6-v2`
+and commits a static JSON index; GitHub Pages serves it. When you search, your
+query is embedded **in your own browser** (via [transformers.js](https://github.com/xenova/transformers.js),
+the same model as an ONNX build) and ranked by cosine similarity against every
+paper, client-side — no server, no database, no API key. See
+[`docs/`](./docs) for the site and [`scripts/build_search_index.py`](./scripts/build_search_index.py)
++ [`.github/workflows/build-search-index.yml`](./.github/workflows/build-search-index.yml)
+for the automation that keeps it fresh.
+
 ## Stack
 
 | Component | Role |
@@ -110,23 +124,34 @@ The pipeline is built to **fail loudly** rather than corrupt or mislead:
 ## Project layout
 
 ```
-vector-forge/
-├── docker-compose.yml
-├── .env.example
-├── requirements.txt          # deps baked into the custom image
-├── docker/airflow.Dockerfile
-├── scripts/init-warehouse.sql
-├── dags/
-│   ├── platform_smoke_test.py
-│   ├── arxiv_ingest.py
-│   ├── arxiv_stage.py
-│   ├── arxiv_embed.py
-│   └── arxiv_freshness.py
-└── include/vectorforge/
-    ├── __init__.py
-    ├── storage.py            # shared S3/MinIO client
-    ├── schemas.py            # pandera validation schemas
-    └── chunking.py           # word-boundary chunker with overlap
+.
+├── .github/workflows/
+│   ├── ci.yml                     # lint + tests for both the pipeline and the demo site
+│   └── build-search-index.yml     # scheduled: refreshes docs/data/papers.json
+├── docs/                          # GitHub Pages site — the live demo (static, no backend)
+│   ├── index.html
+│   ├── assets/{style.css,app.js}
+│   └── data/papers.json           # generated; committed by build-search-index.yml
+├── scripts/build_search_index.py  # fetch → embed → merge, standalone (no Airflow)
+├── tests/test_build_search_index.py
+└── vector-forge/                  # the Airflow pipeline
+    ├── docker-compose.yml
+    ├── .env.example
+    ├── requirements.txt           # deps baked into the custom image
+    ├── docker/airflow.Dockerfile
+    ├── scripts/init-warehouse.sql
+    ├── tests/test_chunking.py
+    ├── dags/
+    │   ├── platform_smoke_test.py
+    │   ├── arxiv_ingest.py
+    │   ├── arxiv_stage.py
+    │   ├── arxiv_embed.py
+    │   └── arxiv_freshness.py
+    └── include/vectorforge/
+        ├── __init__.py
+        ├── storage.py            # shared S3/MinIO client
+        ├── schemas.py            # pandera validation schemas
+        └── chunking.py           # word-boundary chunker with overlap
 ```
 
 ## Troubleshooting notes
@@ -162,6 +187,14 @@ After a DAG file was deleted and re-added, Airflow executed a cached `.pyc` from
 **Fix:** clear the cache (`rm -rf /opt/airflow/dags/__pycache__`) and
 `airflow dags reserialize` when a DAG behaves like an outdated version of itself.
 
+### CI workflow never actually ran — `.github` was inside `vector-forge/`
+
+GitHub Actions only discovers workflows under `.github/workflows` at the
+**repository root**; ours lived at `vector-forge/.github/workflows/ci.yml`, one
+level too deep, so every push silently ran nothing. **Fix:** moved `.github/`
+to the repo root and scoped the pipeline job to `vector-forge/` via
+`defaults.run.working-directory`.
+
 ## Status
 
 - [x] **Phase 0** — Platform boots; smoke test passes.
@@ -169,7 +202,8 @@ After a DAG file was deleted and re-added, Airflow executed a cached `.pyc` from
 - [x] **Phase 2** — Quality gates + validated staging load.
 - [x] **Phase 3** — Chunking, local embeddings, and vector search.
 - [x] **Phase 4** — Freshness SLA + run-level observability.
-- [ ] Phase 5 — Tests, CI, and documentation.
+- [x] **Phase 5** — Tests, CI (now actually running), and a live, backend-free
+      search demo on GitHub Pages, kept fresh by a scheduled Action.
 
 ## License
 

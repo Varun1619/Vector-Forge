@@ -1,2 +1,4 @@
 vector-forge/.env
 vector-forge/logs
+__pycache__/
+*.pyc
